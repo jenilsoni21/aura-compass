@@ -20,8 +20,12 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`font-sans ${GeistSans.variable} ${GeistMono.variable}`}>
-        <Suspense fallback={null}>{children}</Suspense>
-        <Analytics />
+        <Suspense fallback={<div className="min-h-screen bg-background" />}>
+          <Suspense fallback={null}>{children}</Suspense>
+        </Suspense>
+        <Suspense fallback={null}>
+          <Analytics />
+        </Suspense>
       </body>
     </html>
   )
