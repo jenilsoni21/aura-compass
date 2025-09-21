@@ -10,9 +10,10 @@ interface CrisisGuardianProps {
   isVisible: boolean
   onClose: () => void
   triggerText?: string
+  faceEmotion?: string | null
 }
 
-export function CrisisGuardian({ isVisible, onClose, triggerText }: CrisisGuardianProps) {
+export function CrisisGuardian({ isVisible, onClose, triggerText, faceEmotion }: CrisisGuardianProps) {
   const [showBreathingExercise, setShowBreathingExercise] = useState(false)
   const [breathingPhase, setBreathingPhase] = useState<"inhale" | "hold" | "exhale">("inhale")
   const [breathingCount, setBreathingCount] = useState(4)
@@ -109,12 +110,20 @@ export function CrisisGuardian({ isVisible, onClose, triggerText }: CrisisGuardi
               {/* Alert Message */}
               <div className="bg-red-50 border border-red-200 rounded-lg p-4">
                 <p className="text-red-800 font-medium mb-2">
-                  We've noticed distressing language in your recent activity.
+                  {faceEmotion
+                    ? "We've detected concerning emotional patterns in your facial expressions and recent activity."
+                    : "We've noticed distressing language in your recent activity."}
                 </p>
                 <p className="text-red-700 text-sm">
+                  {faceEmotion && <>Your face has shown signs of distress ({faceEmotion}) for an extended period. </>}
                   Your safety and wellbeing are our top priority. Please know that you're not alone, and help is
                   available.
                 </p>
+                {triggerText && triggerText.length > 50 && (
+                  <div className="mt-3 p-3 bg-red-100 rounded border-l-4 border-red-400">
+                    <p className="text-red-800 text-sm italic">"{triggerText}"</p>
+                  </div>
+                )}
               </div>
 
               {/* Immediate Actions */}

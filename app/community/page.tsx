@@ -1,70 +1,218 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
-import { ArrowLeft, Heart, MessageCircle, Shield, Users, Send, Bot, CheckCircle } from "lucide-react"
+import { Switch } from "@/components/ui/switch"
+import {
+  ArrowLeft,
+  Heart,
+  MessageCircle,
+  Shield,
+  Users,
+  Send,
+  Bot,
+  CheckCircle,
+  AlertTriangle,
+  Camera,
+  CameraOff,
+} from "lucide-react"
 import Link from "next/link"
+import { EmotionEnvironment } from "@/components/emotion-environment"
+import { LiveCameraPreview } from "@/components/live-camera-preview"
+import { CrisisGuardian } from "@/components/crisis-guardian"
+import { SessionStorage } from "@/lib/session-storage"
+import { mapFaceEmotionToEnvironment } from "@/lib/face-detection"
+import { useFaceDetection } from "@/hooks/use-face-detection"
 
 interface Post {
   id: string
   content: string
   timestamp: string
-  mood: "struggling" | "hopeful" | "grateful" | "anxious"
+  mood: "struggling" | "hopeful" | "grateful" | "anxious" | "lonely" | "tired"
   likes: number
   aiResponse?: string
   isModerated: boolean
+  hasWarning?: boolean
 }
 
 export default function CommunityPage() {
   const [newPost, setNewPost] = useState("")
+  const [currentEmotion, setCurrentEmotion] = useState("neutral")
+  const [faceDetectionEnabled, setFaceDetectionEnabled] = useState(false)
+  const [detectedFaceEmotion, setDetectedFaceEmotion] = useState<string | null>(null)
+  const [showCrisisGuardian, setShowCrisisGuardian] = useState(false)
+  const [crisisMessage, setCrisisMessage] = useState("")
   const [posts, setPosts] = useState<Post[]>([
     {
       id: "1",
-      content:
-        "I feel alone today. It's been really hard to connect with people lately, and I'm not sure how to reach out.",
+      content: "I feel so alone today. Nobody seems to understand what I'm going through.",
       timestamp: "2 hours ago",
-      mood: "struggling",
+      mood: "lonely",
       likes: 12,
-      aiResponse:
-        "Your feelings are completely valid, and reaching out here shows incredible courage. Remember that feeling alone doesn't mean you are alone - this community sees you and supports you. Small steps like a text to a friend or a walk outside can help break the isolation.",
+      aiResponse: "You're not alone 💙. This community sees you and supports you.",
       isModerated: true,
     },
     {
       id: "2",
-      content: "Had my first therapy session today. Nervous but hopeful about this journey of healing.",
+      content: "I'm so tired and stressed from work. Everything feels overwhelming.",
       timestamp: "4 hours ago",
-      mood: "hopeful",
-      likes: 28,
-      aiResponse:
-        "Taking that first step into therapy is incredibly brave and shows your commitment to your wellbeing. It's completely normal to feel nervous - you're embarking on a meaningful journey of self-discovery and growth. Be patient and kind with yourself through this process.",
+      mood: "tired",
+      likes: 18,
+      aiResponse: "Rest and recharge — you deserve it. Take things one step at a time.",
       isModerated: true,
     },
     {
       id: "3",
-      content: "Grateful for small moments today - my morning coffee tasted perfect and I saw a beautiful sunrise.",
+      content: "Had a breakthrough in therapy today. Feeling hopeful about my healing journey.",
       timestamp: "6 hours ago",
-      mood: "grateful",
+      mood: "hopeful",
       likes: 35,
-      aiResponse:
-        "What a beautiful reminder that joy can be found in simple moments! Practicing gratitude for these small pleasures is a powerful way to nurture your mental wellbeing. Thank you for sharing this positivity with our community.",
+      aiResponse: "Your courage to heal is inspiring. Keep taking those brave steps forward.",
       isModerated: true,
     },
     {
       id: "4",
-      content:
-        "Work stress is overwhelming me. I can't seem to find balance and I'm constantly anxious about deadlines.",
+      content: "Grateful for this community. You all make me feel less alone in my struggles.",
       timestamp: "8 hours ago",
-      mood: "anxious",
-      likes: 18,
-      aiResponse:
-        "Work stress can feel all-consuming, but remember that your worth isn't defined by your productivity. Consider setting small, manageable boundaries - even 5-minute breaks can help reset your nervous system. You're doing better than you think.",
+      mood: "grateful",
+      likes: 28,
+      aiResponse: "Your gratitude creates ripples of positivity. Thank you for being here.",
       isModerated: true,
     },
   ])
+
+  const { onCrisisDetected } = useFaceDetection()
+
+  useEffect(() => {
+    const unsubscribe = onCrisisDetected((message: string, emotion: string) => {
+      setCrisisMessage(message)
+      setShowCrisisGuardian(true)
+      setCurrentEmotion("stressed")
+    })
+
+    return unsubscribe
+  }, [onCrisisDetected])
+
+  useEffect(() => {
+    const savedEmotion = SessionStorage.getCurrentEmotionalState()
+    setCurrentEmotion(savedEmotion)
+  }, [])
+
+  const handleFaceEmotionChange = (faceEmotion: string | null) => {
+    setDetectedFaceEmotion(faceEmotion)
+
+    if (faceEmotion && faceDetectionEnabled) {
+      const mappedEmotion = mapFaceEmotionToEnvironment(faceEmotion as any)
+      setCurrentEmotion(mappedEmotion)
+    }
+  }
+
+  const generateAIResponse = (content: string): string => {
+    const lowerContent = content.toLowerCase()
+
+    let baseResponse = ""
+
+    const crisisKeywords = ["kill myself", "end it all", "want to die", "suicide", "hurt myself", "no point living"]
+    if (crisisKeywords.some((keyword) => lowerContent.includes(keyword))) {
+      setShowCrisisGuardian(true)
+      setCrisisMessage("Crisis language detected in community post")
+      return "I'm very concerned about you. Please reach out for immediate support - you don't have to go through this alone."
+    }
+
+    if (lowerContent.includes("alone") || lowerContent.includes("lonely") || lowerContent.includes("isolated")) {
+      baseResponse = "You're not alone 💙. This community sees you and supports you."
+    } else if (lowerContent.includes("sad") || lowerContent.includes("depressed") || lowerContent.includes("down")) {
+      baseResponse = "Your feelings are valid. Sending you strength and virtual hugs 🤗."
+    } else if (
+      lowerContent.includes("tired") ||
+      lowerContent.includes("stress") ||
+      lowerContent.includes("overwhelmed")
+    ) {
+      baseResponse = "Rest and recharge — you deserve it. Take things one step at a time."
+    } else if (
+      lowerContent.includes("anxious") ||
+      lowerContent.includes("worried") ||
+      lowerContent.includes("nervous")
+    ) {
+      baseResponse = "Take a deep breath. You're stronger than your anxiety, and we believe in you."
+    } else if (lowerContent.includes("better") || lowerContent.includes("hope") || lowerContent.includes("progress")) {
+      baseResponse = "Your resilience is inspiring. Keep moving forward, one day at a time."
+    } else if (
+      lowerContent.includes("grateful") ||
+      lowerContent.includes("thankful") ||
+      lowerContent.includes("appreciate")
+    ) {
+      baseResponse = "Your gratitude creates ripples of positivity. Thank you for sharing your light."
+    } else {
+      baseResponse = "Thank you for sharing with our community. Your openness helps create a safe space for everyone."
+    }
+
+    if (faceDetectionEnabled && detectedFaceEmotion) {
+      if (detectedFaceEmotion === "stressed" && !lowerContent.includes("stress")) {
+        baseResponse += " I also notice you might be feeling stressed right now - take a moment to breathe."
+      } else if (detectedFaceEmotion === "sad" && !lowerContent.includes("sad")) {
+        baseResponse += " Your face shows you're going through a tough time - we're here for you."
+      }
+    }
+
+    return baseResponse
+  }
+
+  const checkForToxicContent = (content: string): boolean => {
+    const toxicKeywords = [
+      "hate",
+      "stupid",
+      "worthless",
+      "pathetic",
+      "loser",
+      "failure",
+      "kill yourself",
+      "die",
+      "harm",
+      "violence",
+    ]
+
+    const lowerContent = content.toLowerCase()
+    return toxicKeywords.some((keyword) => lowerContent.includes(keyword))
+  }
+
+  const getMoodFromContent = (content: string): Post["mood"] => {
+    const lowerContent = content.toLowerCase()
+
+    if (lowerContent.includes("alone") || lowerContent.includes("lonely")) return "lonely"
+    if (lowerContent.includes("tired") || lowerContent.includes("stress")) return "tired"
+    if (lowerContent.includes("anxious") || lowerContent.includes("worried")) return "anxious"
+    if (lowerContent.includes("grateful") || lowerContent.includes("thankful")) return "grateful"
+    if (lowerContent.includes("hope") || lowerContent.includes("better")) return "hopeful"
+
+    return "struggling"
+  }
+
+  const handleSubmitPost = () => {
+    if (!newPost.trim()) return
+
+    const hasToxicContent = checkForToxicContent(newPost)
+    const mood = getMoodFromContent(newPost)
+    const aiResponse = generateAIResponse(newPost)
+
+    const post: Post = {
+      id: Date.now().toString(),
+      content: newPost,
+      timestamp: "Just now",
+      mood,
+      likes: 0,
+      aiResponse,
+      isModerated: true,
+      hasWarning: hasToxicContent,
+    }
+
+    setPosts([post, ...posts])
+    setNewPost("")
+  }
 
   const getMoodColor = (mood: string) => {
     switch (mood) {
@@ -76,6 +224,10 @@ export default function CommunityPage() {
         return "bg-purple-100 text-purple-700 border-purple-200"
       case "anxious":
         return "bg-yellow-100 text-yellow-700 border-yellow-200"
+      case "lonely":
+        return "bg-indigo-100 text-indigo-700 border-indigo-200"
+      case "tired":
+        return "bg-gray-100 text-gray-700 border-gray-200"
       default:
         return "bg-gray-100 text-gray-700 border-gray-200"
     }
@@ -91,32 +243,20 @@ export default function CommunityPage() {
         return "🙏"
       case "anxious":
         return "🤗"
+      case "lonely":
+        return "🫂"
+      case "tired":
+        return "😴"
       default:
         return "💭"
     }
   }
 
-  const handleSubmitPost = () => {
-    if (newPost.trim()) {
-      const post: Post = {
-        id: Date.now().toString(),
-        content: newPost,
-        timestamp: "Just now",
-        mood: "hopeful", // Default mood
-        likes: 0,
-        aiResponse:
-          "Thank you for sharing with our community. Your openness helps create a safe space for others to express themselves too. Remember, you're not alone in this journey.",
-        isModerated: true,
-      }
-      setPosts([post, ...posts])
-      setNewPost("")
-    }
-  }
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-muted/30 to-background">
+    <EmotionEnvironment emotionalState={currentEmotion as any}>
+      {faceDetectionEnabled && <LiveCameraPreview onEmotionChange={handleFaceEmotionChange} />}
+
       <div className="container mx-auto px-4 py-8 max-w-4xl">
-        {/* Header */}
         <div className="flex items-center gap-4 mb-8">
           <Link href="/">
             <Button variant="outline" size="sm">
@@ -126,18 +266,53 @@ export default function CommunityPage() {
           </Link>
           <div className="flex-1">
             <h1 className="text-3xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-              Peer Support Community
+              Peer Support Feed
             </h1>
-            <p className="text-muted-foreground mt-1">A safe space to share, connect, and support each other</p>
+            <p className="text-foreground/80 mt-1">A safe space to share, connect, and support each other</p>
           </div>
           <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
             <Shield className="h-3 w-3 mr-1" />
-            Moderated
+            AI Moderated
           </Badge>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              {faceDetectionEnabled ? (
+                <Camera className="h-4 w-4 text-primary" />
+              ) : (
+                <CameraOff className="h-4 w-4 text-muted-foreground" />
+              )}
+              <span className="text-sm text-muted-foreground">Live Detection</span>
+            </div>
+            <Switch checked={faceDetectionEnabled} onCheckedChange={setFaceDetectionEnabled} />
+          </div>
         </div>
 
-        {/* Community Guidelines */}
-        <Card className="mb-6 border-primary/20 bg-gradient-to-r from-primary/5 to-accent/5">
+        {faceDetectionEnabled && detectedFaceEmotion && (
+          <Card className="mb-6 border-primary/20 bg-card/80 backdrop-blur-sm">
+            <CardContent className="pt-4">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-gradient-to-br from-primary to-accent rounded-full flex items-center justify-center">
+                  <Camera className="h-4 w-4 text-white" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium">
+                    I notice you look <span className="capitalize text-primary">{detectedFaceEmotion}</span> while
+                    browsing
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {detectedFaceEmotion === "stressed" && "Take a deep breath - you've got this."}
+                    {detectedFaceEmotion === "sad" && "Remember, this community is here to support you."}
+                    {detectedFaceEmotion === "happy" && "Your positive energy brightens this space."}
+                    {!["stressed", "sad", "happy"].includes(detectedFaceEmotion) &&
+                      "Your environment adapts to support you."}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        <Card className="mb-6 border-primary/20 bg-card/80 backdrop-blur-sm">
           <CardContent className="pt-6">
             <div className="flex items-start gap-3">
               <div className="w-8 h-8 bg-gradient-to-br from-primary to-accent rounded-full flex items-center justify-center flex-shrink-0">
@@ -145,54 +320,54 @@ export default function CommunityPage() {
               </div>
               <div>
                 <h3 className="font-medium text-primary mb-2">Community Guidelines</h3>
-                <p className="text-sm text-muted-foreground">
-                  This is a safe, supportive space. All posts are anonymous and moderated by AI for safety. Share your
-                  feelings, support others, and remember - you're not alone in your journey.
+                <p className="text-sm text-foreground/80">
+                  Share how you feel today. All posts are anonymous and monitored by AI for safety. Our AI companion
+                  provides empathetic responses to support you.
                 </p>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* New Post */}
-        <Card className="mb-8 border-primary/20">
+        <Card className="mb-8 border-primary/20 bg-card/80 backdrop-blur-sm">
           <CardHeader>
-            <CardTitle className="text-lg">Share with the Community</CardTitle>
+            <CardTitle className="text-lg">Share how you feel today</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <Textarea
-              placeholder="How are you feeling today? Share your thoughts, struggles, or victories - this community is here to support you..."
+              placeholder="Share your thoughts, feelings, or what's on your mind today..."
               value={newPost}
               onChange={(e) => setNewPost(e.target.value)}
-              className="min-h-[100px] resize-none border-primary/20 focus:border-primary/50"
+              className="min-h-[100px] resize-none border-primary/20 focus:border-primary/50 bg-background/50"
             />
             <div className="flex justify-between items-center">
-              <p className="text-xs text-muted-foreground">Your post will be anonymous and reviewed for safety</p>
+              <p className="text-xs text-muted-foreground">Posts are anonymous and AI-moderated for safety</p>
               <Button
                 onClick={handleSubmitPost}
                 disabled={!newPost.trim()}
                 className="bg-gradient-to-r from-primary to-accent hover:from-primary/90 hover:to-accent/90"
               >
                 <Send className="h-4 w-4 mr-2" />
-                Share Anonymously
+                Post Anonymously
               </Button>
             </div>
           </CardContent>
         </Card>
 
-        {/* Posts Feed */}
         <div className="space-y-6">
           {posts.map((post) => (
-            <Card key={post.id} className="border-primary/10 hover:border-primary/20 transition-colors">
+            <Card
+              key={post.id}
+              className="border-primary/10 hover:border-primary/20 transition-colors bg-card/80 backdrop-blur-sm"
+            >
               <CardContent className="pt-6">
-                {/* Post Header */}
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-3">
                     <Avatar className="w-8 h-8 bg-gradient-to-br from-muted to-muted-foreground/20">
                       <AvatarFallback className="text-xs bg-transparent">{getMoodEmoji(post.mood)}</AvatarFallback>
                     </Avatar>
                     <div>
-                      <p className="text-sm font-medium">Anonymous Community Member</p>
+                      <p className="text-sm font-medium">Anonymous</p>
                       <p className="text-xs text-muted-foreground">{post.timestamp}</p>
                     </div>
                   </div>
@@ -200,6 +375,12 @@ export default function CommunityPage() {
                     <Badge variant="outline" className={getMoodColor(post.mood)}>
                       {post.mood}
                     </Badge>
+                    {post.hasWarning && (
+                      <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">
+                        <AlertTriangle className="h-3 w-3 mr-1" />
+                        Support resources recommended
+                      </Badge>
+                    )}
                     {post.isModerated && (
                       <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
                         <CheckCircle className="h-3 w-3 mr-1" />
@@ -209,10 +390,8 @@ export default function CommunityPage() {
                   </div>
                 </div>
 
-                {/* Post Content */}
                 <p className="text-sm leading-relaxed mb-4 text-foreground">{post.content}</p>
 
-                {/* AI Response */}
                 {post.aiResponse && (
                   <div className="bg-gradient-to-r from-accent/10 to-primary/10 rounded-lg p-4 mb-4 border border-primary/10">
                     <div className="flex items-start gap-3">
@@ -220,14 +399,13 @@ export default function CommunityPage() {
                         <Bot className="h-3 w-3 text-white" />
                       </div>
                       <div>
-                        <p className="text-xs font-medium text-primary mb-1">AI Companion Response</p>
-                        <p className="text-sm text-muted-foreground leading-relaxed">{post.aiResponse}</p>
+                        <p className="text-xs font-medium text-primary mb-1">AI Empathy Response</p>
+                        <p className="text-sm text-foreground/80 leading-relaxed">{post.aiResponse}</p>
                       </div>
                     </div>
                   </div>
                 )}
 
-                {/* Post Actions */}
                 <div className="flex items-center gap-4 pt-2 border-t border-border">
                   <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-primary">
                     <Heart className="h-4 w-4 mr-2" />
@@ -243,13 +421,19 @@ export default function CommunityPage() {
           ))}
         </div>
 
-        {/* Load More */}
         <div className="text-center mt-8">
           <Button variant="outline" className="border-primary/50 hover:bg-primary/5 bg-transparent">
             Load More Posts
           </Button>
         </div>
       </div>
-    </div>
+
+      <CrisisGuardian
+        isVisible={showCrisisGuardian}
+        onClose={() => setShowCrisisGuardian(false)}
+        triggerText={crisisMessage || newPost}
+        faceEmotion={detectedFaceEmotion}
+      />
+    </EmotionEnvironment>
   )
 }

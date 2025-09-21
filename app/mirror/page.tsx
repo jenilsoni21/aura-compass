@@ -3,122 +3,132 @@
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Textarea } from "@/components/ui/textarea"
-import { ArrowLeft, Lightbulb, Heart } from "lucide-react"
+import { Switch } from "@/components/ui/switch"
+import { ArrowLeft, Lightbulb, Heart, Save, Camera, CameraOff } from "lucide-react"
 import Link from "next/link"
+import { DynamicAvatar } from "@/components/dynamic-avatar"
+import { EmotionEnvironment } from "@/components/emotion-environment"
+import { LiveCameraPreview } from "@/components/live-camera-preview"
+import { detectEmotion, detectCrisis, getEmotionAdvice, type EmotionalState } from "@/lib/emotion-detector"
+import { SessionStorage, type JournalEntry } from "@/lib/session-storage"
 import { CrisisGuardian } from "@/components/crisis-guardian"
-
-type AvatarMood = "happy" | "stressed" | "calm" | "anxious" | "sad"
+import { mapFaceEmotionToEnvironment } from "@/lib/face-detection"
+import { useFaceDetection } from "@/hooks/use-face-detection"
 
 export default function MirrorModePage() {
   const [journalText, setJournalText] = useState("")
-  const [avatarMood, setAvatarMood] = useState<AvatarMood>("calm")
+  const [currentEmotion, setCurrentEmotion] = useState<EmotionalState>("neutral")
   const [aiSuggestion, setAiSuggestion] = useState("")
   const [showCrisisGuardian, setShowCrisisGuardian] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const [faceDetectionEnabled, setFaceDetectionEnabled] = useState(false)
+  const [detectedFaceEmotion, setDetectedFaceEmotion] = useState<string | null>(null)
+  const [textEmotion, setTextEmotion] = useState<EmotionalState>("neutral")
+  const [blendedEmotion, setBlendedEmotion] = useState<EmotionalState>("neutral")
+  const [crisisMessage, setCrisisMessage] = useState("")
 
-  const getAvatarContent = (mood: AvatarMood) => {
-    switch (mood) {
-      case "happy":
-        return {
-          emoji: "😊",
-          bg: "bg-gradient-to-br from-green-400 to-emerald-500",
-          glow: "shadow-green-400/50 shadow-2xl",
-          animation: "animate-pulse",
-        }
-      case "stressed":
-        return {
-          emoji: "😰",
-          bg: "bg-gradient-to-br from-gray-400 to-gray-600",
-          glow: "shadow-gray-400/30 shadow-lg",
-          animation: "animate-bounce",
-        }
-      case "anxious":
-        return {
-          emoji: "😟",
-          bg: "bg-gradient-to-br from-yellow-400 to-orange-500",
-          glow: "shadow-yellow-400/40 shadow-xl",
-          animation: "animate-spin-slow",
-        }
-      case "sad":
-        return {
-          emoji: "😢",
-          bg: "bg-gradient-to-br from-blue-400 to-blue-600",
-          glow: "shadow-blue-400/30 shadow-lg",
-          animation: "",
-        }
-      case "calm":
-        return {
-          emoji: "😌",
-          bg: "bg-gradient-to-br from-emerald-300 to-green-400",
-          glow: "shadow-emerald-400/40 shadow-xl",
-          animation: "animate-pulse",
-        }
-    }
-  }
+  const { onCrisisDetected } = useFaceDetection()
+
+  useEffect(() => {
+    const unsubscribe = onCrisisDetected((message: string, emotion: string) => {
+      setCrisisMessage(message)
+      setShowCrisisGuardian(true)
+      setCurrentEmotion("stressed")
+      setAiSuggestion("I'm very concerned about you right now. Please reach out for immediate support.")
+    })
+
+    return unsubscribe
+  }, [onCrisisDetected])
 
   const analyzeText = (text: string) => {
-    const lowerText = text.toLowerCase()
-
-    const crisisKeywords = [
-      "kill myself",
-      "end it all",
-      "don't want to live",
-      "suicide",
-      "hurt myself",
-      "self harm",
-      "no point in living",
-      "better off dead",
-      "can't go on",
-      "want to die",
-    ]
-
-    // Check for crisis indicators first
-    const hasCrisisLanguage = crisisKeywords.some((keyword) => lowerText.includes(keyword))
-    if (hasCrisisLanguage) {
-      setShowCrisisGuardian(true)
-      setAvatarMood("sad")
-      setAiSuggestion(
-        "I'm concerned about you. Please reach out for immediate support - you don't have to go through this alone.",
-      )
+    if (!text.trim()) {
+      setAiSuggestion("")
+      setTextEmotion("neutral")
       return
     }
 
-    // Stress indicators
-    if (lowerText.includes("stressed") || lowerText.includes("overwhelmed") || lowerText.includes("pressure")) {
-      setAvatarMood("stressed")
-      setAiSuggestion("Take a 5-minute break and breathe deeply. Try the 4-7-8 breathing technique.")
-    }
-    // Anxiety indicators
-    else if (lowerText.includes("anxious") || lowerText.includes("worried") || lowerText.includes("nervous")) {
-      setAvatarMood("anxious")
+    if (detectCrisis(text)) {
+      setShowCrisisGuardian(true)
+      const crisisEmotion = "stressed"
+      setTextEmotion(crisisEmotion)
+      setCurrentEmotion(crisisEmotion)
       setAiSuggestion(
-        "Ground yourself with the 5-4-3-2-1 technique: 5 things you see, 4 you touch, 3 you hear, 2 you smell, 1 you taste.",
+        "I'm concerned about you. Please reach out for immediate support - you don't have to go through this alone.",
       )
+      SessionStorage.setCurrentEmotionalState(crisisEmotion)
+      return
     }
-    // Sadness indicators
-    else if (lowerText.includes("sad") || lowerText.includes("down") || lowerText.includes("depressed")) {
-      setAvatarMood("sad")
-      setAiSuggestion(
-        "Your feelings are valid. Consider reaching out to a friend or doing something kind for yourself today.",
-      )
-    }
-    // Happy indicators
-    else if (
-      lowerText.includes("happy") ||
-      lowerText.includes("great") ||
-      lowerText.includes("excited") ||
-      lowerText.includes("good")
-    ) {
-      setAvatarMood("happy")
-      setAiSuggestion("Wonderful! Savor this positive moment and consider what contributed to these good feelings.")
-    }
-    // Default calm state
-    else if (text.length > 10) {
-      setAvatarMood("calm")
-      setAiSuggestion("Thank you for sharing. Reflecting on your thoughts is a powerful step toward self-awareness.")
+
+    const emotion = detectEmotion(text)
+    setTextEmotion(emotion)
+
+    if (faceDetectionEnabled && detectedFaceEmotion) {
+      const blended = blendEmotions(emotion, detectedFaceEmotion)
+      setBlendedEmotion(blended)
+      setCurrentEmotion(blended)
+      setAiSuggestion(getBlendedEmotionAdvice(emotion, detectedFaceEmotion, blended))
     } else {
-      setAiSuggestion("")
+      setCurrentEmotion(emotion)
+      setAiSuggestion(getEmotionAdvice(emotion))
+    }
+
+    SessionStorage.setCurrentEmotionalState(currentEmotion)
+  }
+
+  const blendEmotions = (textEmotion: EmotionalState, faceEmotion: string): EmotionalState => {
+    const emotionPriority: Record<string, number> = {
+      stressed: 5,
+      anxious: 4,
+      sad: 3,
+      angry: 3,
+      neutral: 2,
+      calm: 1,
+      happy: 1,
+      resilient: 1,
+    }
+
+    const textPriority = emotionPriority[textEmotion] || 2
+    const facePriority = emotionPriority[faceEmotion] || 2
+
+    if (textEmotion === "calm" && (faceEmotion === "sad" || faceEmotion === "angry")) {
+      return "anxious"
+    }
+
+    if (textEmotion === "happy" && faceEmotion === "sad") {
+      return "neutral"
+    }
+
+    if (facePriority > textPriority) {
+      return mapFaceEmotionToEnvironment(faceEmotion as any) as EmotionalState
+    }
+
+    return textEmotion
+  }
+
+  const getBlendedEmotionAdvice = (
+    textEmotion: EmotionalState,
+    faceEmotion: string,
+    blendedEmotion: EmotionalState,
+  ): string => {
+    if (textEmotion !== blendedEmotion) {
+      return `I notice your words express ${textEmotion} feelings, but your face shows ${faceEmotion}. This mixed state is completely normal. ${getEmotionAdvice(blendedEmotion)}`
+    }
+
+    return `Your words and facial expression both show ${blendedEmotion} - you're in harmony. ${getEmotionAdvice(blendedEmotion)}`
+  }
+
+  const handleFaceEmotionChange = (faceEmotion: string | null) => {
+    setDetectedFaceEmotion(faceEmotion)
+
+    if (faceEmotion && faceDetectionEnabled) {
+      if (journalText.trim()) {
+        analyzeText(journalText)
+      } else {
+        const mappedEmotion = mapFaceEmotionToEnvironment(faceEmotion as any) as EmotionalState
+        setCurrentEmotion(mappedEmotion)
+        setAiSuggestion(`I can see you're feeling ${faceEmotion}. ${getEmotionAdvice(mappedEmotion)}`)
+      }
     }
   }
 
@@ -127,17 +137,60 @@ export default function MirrorModePage() {
       if (journalText.trim()) {
         analyzeText(journalText)
       }
-    }, 1000) // Analyze after 1 second of no typing
+    }, 1000)
 
     return () => clearTimeout(timeoutId)
-  }, [journalText])
+  }, [journalText, faceDetectionEnabled, detectedFaceEmotion])
 
-  const avatarContent = getAvatarContent(avatarMood)
+  const handleSaveEntry = async () => {
+    if (!journalText.trim()) return
+
+    setIsSaving(true)
+
+    const entry: JournalEntry = {
+      id: Date.now().toString(),
+      content: journalText,
+      emotion: currentEmotion,
+      timestamp: new Date(),
+      aiAdvice: aiSuggestion,
+      faceEmotion: detectedFaceEmotion,
+      blendedEmotion: faceDetectionEnabled ? blendedEmotion : undefined,
+    }
+
+    SessionStorage.saveJournalEntry(entry)
+
+    setTimeout(() => {
+      setIsSaving(false)
+      setJournalText("")
+      setAiSuggestion("")
+      setCurrentEmotion("neutral")
+      setTextEmotion("neutral")
+      setBlendedEmotion("neutral")
+    }, 1000)
+  }
+
+  const getAvatarState = (emotion: EmotionalState) => {
+    switch (emotion) {
+      case "stressed":
+        return "foggy"
+      case "anxious":
+        return "anxious"
+      case "calm":
+        return "glowing"
+      case "happy":
+        return "happy"
+      case "resilient":
+        return "glowing"
+      default:
+        return "neutral"
+    }
+  }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-muted/30 to-background">
+    <EmotionEnvironment emotionalState={currentEmotion}>
+      {faceDetectionEnabled && <LiveCameraPreview onEmotionChange={handleFaceEmotionChange} />}
+
       <div className="container mx-auto px-4 py-8">
-        {/* Header */}
         <div className="flex items-center gap-4 mb-8">
           <Link href="/">
             <Button variant="outline" size="sm">
@@ -151,32 +204,52 @@ export default function MirrorModePage() {
         </div>
 
         <div className="grid lg:grid-cols-3 gap-8">
-          {/* Journaling Area */}
           <div className="lg:col-span-2 space-y-6">
-            <Card className="border-primary/20">
+            <Card className="border-primary/20 bg-card/80 backdrop-blur-sm">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Heart className="h-5 w-5 text-primary" />
                   How are you feeling today?
                 </CardTitle>
+                <div className="flex items-center gap-3 pt-2">
+                  <div className="flex items-center gap-2">
+                    {faceDetectionEnabled ? (
+                      <Camera className="h-4 w-4 text-primary" />
+                    ) : (
+                      <CameraOff className="h-4 w-4 text-muted-foreground" />
+                    )}
+                    <span className="text-sm text-muted-foreground">Face Detection</span>
+                  </div>
+                  <Switch checked={faceDetectionEnabled} onCheckedChange={setFaceDetectionEnabled} />
+                  <span className="text-xs text-muted-foreground">
+                    {faceDetectionEnabled ? "Blending face + text emotions" : "Text emotions only"}
+                  </span>
+                </div>
               </CardHeader>
               <CardContent>
                 <Textarea
-                  placeholder="Start writing about your thoughts and feelings... I'll listen and adapt to support you."
+                  placeholder="Start writing about your thoughts and feelings... Watch as your environment responds to your emotions."
                   value={journalText}
                   onChange={(e) => setJournalText(e.target.value)}
-                  className="min-h-[300px] resize-none border-primary/20 focus:border-primary/50 transition-colors"
+                  className="min-h-[300px] resize-none border-primary/20 focus:border-primary/50 transition-colors bg-background/50"
                 />
-                <div className="flex justify-between items-center mt-4 text-sm text-muted-foreground">
-                  <span>{journalText.length} characters</span>
-                  <span>Your thoughts are safe and private</span>
+                <div className="flex justify-between items-center mt-4">
+                  <span className="text-sm text-muted-foreground">{journalText.length} characters</span>
+                  <Button
+                    onClick={handleSaveEntry}
+                    disabled={!journalText.trim() || isSaving}
+                    size="sm"
+                    className="bg-primary hover:bg-primary/90"
+                  >
+                    <Save className="h-4 w-4 mr-2" />
+                    {isSaving ? "Saving..." : "Save Entry"}
+                  </Button>
                 </div>
               </CardContent>
             </Card>
 
-            {/* AI Suggestion Box */}
             {aiSuggestion && (
-              <Card className="border-accent/30 bg-gradient-to-r from-accent/5 to-primary/5">
+              <Card className="border-accent/30 bg-gradient-to-r from-accent/5 to-primary/5 backdrop-blur-sm">
                 <CardContent className="pt-6">
                   <div className="flex items-start gap-3">
                     <div className="w-8 h-8 bg-gradient-to-br from-primary to-accent rounded-full flex items-center justify-center flex-shrink-0">
@@ -184,7 +257,7 @@ export default function MirrorModePage() {
                     </div>
                     <div>
                       <h3 className="font-medium text-primary mb-2">AI Companion Suggestion</h3>
-                      <p className="text-sm text-muted-foreground leading-relaxed">{aiSuggestion}</p>
+                      <p className="text-sm text-foreground/80 leading-relaxed">{aiSuggestion}</p>
                     </div>
                   </div>
                 </CardContent>
@@ -192,68 +265,81 @@ export default function MirrorModePage() {
             )}
           </div>
 
-          {/* Avatar & Mood Display */}
           <div className="space-y-6">
-            <Card className="border-primary/20">
+            <Card className="border-primary/20 bg-card/80 backdrop-blur-sm">
               <CardHeader>
                 <CardTitle className="text-center">Your Emotional Mirror</CardTitle>
               </CardHeader>
               <CardContent className="text-center space-y-6">
-                {/* Avatar */}
                 <div className="flex justify-center">
-                  <div className="relative">
-                    <Avatar
-                      className={`w-24 h-24 ${avatarContent.bg} ${avatarContent.glow} ${avatarContent.animation} transition-all duration-1000 ease-in-out`}
-                    >
-                      <AvatarFallback className="text-4xl bg-transparent">{avatarContent.emoji}</AvatarFallback>
-                    </Avatar>
-
-                    {/* Mood-based effects */}
-                    {avatarMood === "stressed" && (
-                      <div className="absolute inset-0 rounded-full bg-gray-400/20 animate-ping"></div>
-                    )}
-                    {avatarMood === "anxious" && (
-                      <div className="absolute inset-0 rounded-full bg-yellow-400/20 animate-pulse"></div>
-                    )}
-                  </div>
+                  <DynamicAvatar state={getAvatarState(currentEmotion) as any} size="lg" />
                 </div>
 
-                {/* Mood Label */}
                 <div className="space-y-2">
-                  <p className="text-lg font-medium capitalize">{avatarMood}</p>
-                  <p className="text-sm text-muted-foreground">I'm reflecting your emotional state as you write</p>
+                  <p className="text-lg font-medium capitalize">{currentEmotion}</p>
+                  <p className="text-sm text-muted-foreground">Your environment reflects your emotional state</p>
+
+                  {faceDetectionEnabled && (textEmotion !== currentEmotion || detectedFaceEmotion) && (
+                    <div className="pt-3 border-t border-border/50">
+                      <div className="text-xs space-y-1">
+                        {journalText.trim() && (
+                          <p className="text-muted-foreground">
+                            Text: <span className="capitalize text-foreground">{textEmotion}</span>
+                          </p>
+                        )}
+                        {detectedFaceEmotion && (
+                          <p className="text-muted-foreground">
+                            Face: <span className="capitalize text-foreground">{detectedFaceEmotion}</span>
+                          </p>
+                        )}
+                        {(textEmotion !== currentEmotion ||
+                          (detectedFaceEmotion && detectedFaceEmotion !== currentEmotion)) && (
+                          <p className="text-primary font-medium">
+                            Blended: <span className="capitalize">{currentEmotion}</span>
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                {/* Mood History */}
                 <div className="pt-4 border-t border-border">
-                  <h4 className="text-sm font-medium mb-3">Recent Moods</h4>
-                  <div className="flex justify-center gap-2">
-                    {["😌", "😊", "😰", "😟"].map((emoji, index) => (
-                      <div
-                        key={index}
-                        className="w-8 h-8 bg-muted rounded-full flex items-center justify-center text-sm opacity-60"
-                      >
-                        {emoji}
-                      </div>
-                    ))}
+                  <h4 className="text-sm font-medium mb-3">Environment Response</h4>
+                  <div className="text-xs text-muted-foreground space-y-1">
+                    {currentEmotion === "stressed" && <p>🌩️ Stormy atmosphere with subtle lightning</p>}
+                    {currentEmotion === "anxious" && <p>🌫️ Trembling fog animation</p>}
+                    {currentEmotion === "calm" && <p>🌅 Sunrise gradient with gentle blossoms</p>}
+                    {currentEmotion === "happy" && <p>☀️ Bright, warm environment</p>}
+                    {currentEmotion === "resilient" && <p>🌈 Radiant gradient with aurora effects</p>}
+                    {currentEmotion === "neutral" && <p>🌸 Peaceful, balanced atmosphere</p>}
                   </div>
                 </div>
               </CardContent>
             </Card>
 
-            {/* Quick Actions */}
-            <Card className="border-primary/20">
+            <Card className="border-primary/20 bg-card/80 backdrop-blur-sm">
               <CardHeader>
                 <CardTitle className="text-sm">Quick Actions</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                <Button variant="outline" size="sm" className="w-full justify-start bg-transparent">
-                  Save Entry
-                </Button>
-                <Button variant="outline" size="sm" className="w-full justify-start bg-transparent">
-                  View Past Entries
-                </Button>
-                <Button variant="outline" size="sm" className="w-full justify-start bg-transparent">
+                <Link href="/progress">
+                  <Button variant="outline" size="sm" className="w-full justify-start bg-transparent">
+                    View Progress
+                  </Button>
+                </Link>
+                <Link href="/dashboard">
+                  <Button variant="outline" size="sm" className="w-full justify-start bg-transparent">
+                    Wellness Dashboard
+                  </Button>
+                </Link>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full justify-start bg-transparent"
+                  onClick={() => {
+                    setAiSuggestion("Take a deep breath in for 4 counts, hold for 7, exhale for 8. Repeat 3 times.")
+                  }}
+                >
                   Breathing Exercise
                 </Button>
               </CardContent>
@@ -262,12 +348,12 @@ export default function MirrorModePage() {
         </div>
       </div>
 
-      {/* Crisis Guardian Modal */}
       <CrisisGuardian
         isVisible={showCrisisGuardian}
         onClose={() => setShowCrisisGuardian(false)}
-        triggerText={journalText}
+        triggerText={crisisMessage || journalText}
+        faceEmotion={detectedFaceEmotion}
       />
-    </div>
+    </EmotionEnvironment>
   )
 }
